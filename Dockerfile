@@ -20,6 +20,8 @@ RUN set -ex && apk --update --no-cache add \
     libtool \
     g++ \
     git \
+    nodejs \
+    npm \
     openjdk8-jre \
     libstdc++ \
     ca-certificates
@@ -70,6 +72,7 @@ COPY --from=build /usr/local/include/google/ /usr/local/include/google
 COPY --from=build /usr/local/bin/prototool /usr/local/bin/prototool
 COPY --from=build /go/bin/* /usr/local/bin/
 COPY --from=build /tmp/grpc_web_plugin /usr/local/bin/grpc_web_plugin
+COPY --from=build /tmp/ts-protoc-gen /usr/local/bin/ts-protoc-gen
 
 COPY --from=build /go/src/github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options/ /usr/local/include/protoc-gen-swagger/options/
 
