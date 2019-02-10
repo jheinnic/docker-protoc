@@ -3,7 +3,7 @@
 set -e
 
 printUsage() {
-    echo "gen-proto generates grpc and protobuf @ Namely"
+    echo "gen-proto generates grpc and protobuf @ JCH Portfolio Projects"
     echo " "
     echo "Usage: gen-proto -f my-service.proto -l go"
     echo " "
@@ -18,6 +18,7 @@ printUsage() {
     echo " --with-gateway       Generate grpc-gateway files (experimental)."
     echo " --with-docs FORMAT   Generate documentation (FORMAT is optional - see https://github.com/pseudomuto/protoc-gen-doc#invoking-the-plugin)"
     echo " --go-source-relative Make go import paths 'source_relative' - see https://github.com/golang/protobuf#parameters"
+    echo " --no-copy            Skip placing a copy of proto source files in $OUT_DIR"
 }
 
 
@@ -26,9 +27,10 @@ GEN_DOCS=false
 DOCS_FORMAT="html,index.html"
 LINT=false
 LINT_CHECKS=""
-SUPPORTED_LANGUAGES=("go" "ruby" "csharp" "java" "python" "objc" "gogo" "php" "node" "web" "ts")
+SUPPORTED_LANGUAGES=("go" "ruby" "csharp" "java" "python" "objc" "gogo" "php" "node" "web")
 EXTRA_INCLUDES=""
 OUT_DIR=""
+COPY_PROTO="gen"
 GO_SOURCE_RELATIVE=""
 
 while test $# -gt 0; do
@@ -75,13 +77,16 @@ while test $# -gt 0; do
             EXTRA_INCLUDES="$EXTRA_INCLUDES -I$1"
             shift
             ;;
+        --no-copy)
+            unset COPY_PROTO
+            ;;
         --with-gateway)
             GEN_GATEWAY=true
             shift
             ;;
         --with-docs)
             GEN_DOCS=true
-            if [ "$#" -gt 1 ] && [[ $2 != -* ]]; then
+            if [[ "$#" -gt 1 ]] && [[ $2 != -* ]]; then
                 DOCS_FORMAT=$2
                 shift
             fi
@@ -89,9 +94,9 @@ while test $# -gt 0; do
             ;;
         --lint)
             LINT=true
-            if [ "$#" -gt 1 ] && [[ $2 != -* ]]; then
+            if [[ "$#" -gt 1 ]] && [[ $2 != -* ]]; then
                 LINT_CHECKS=$2
-		        shift
+                shift
             fi
             shift
             ;;
@@ -117,7 +122,7 @@ if [[ ! -z $FILE && ! -z $PROTO_DIR ]]; then
     exit 1
 fi
 
-if [ -z $GEN_LANG ]; then
+if [[ -z $GEN_LANG ]]; then
     echo "Error: You must specify a language: ${SUPPORTED_LANGUAGES[@]}"
     printUsage
     exit 1
@@ -134,7 +139,7 @@ if [[ "$GEN_GATEWAY" == true && "$GEN_LANG" != "go" ]]; then
 fi
 
 PLUGIN_LANG=$GEN_LANG
-if [ $PLUGIN_LANG == 'objc' ] ; then
+if [[ $PLUGIN_LANG == 'objc' ]] ; then
     PLUGIN_LANG='objective_c'
 fi
 
@@ -148,15 +153,72 @@ if [[ $OUT_DIR == '' ]]; then
     fi
 fi
 
-if [[ ! -d $OUT_DIR ]]; then
-  # If a .jar is specified, protoc can output to the jar directly. So
-  # don't create it as a directory.
-  if [[ "$GEN_LANG" == "java" ]] && [[ $OUT_DIR == *.jar ]]; then
-    mkdir -p `dirname $OUT_DIR`
-  else
-    mkdir -p $OUT_DIR
-  fi
-fi
+case $GEN_LANG in
+    "java")
+        # If a .jar is specified, protoc can output to the jar directly. So
+        # don't create it as a directory.
+        if [[ $OUT_DIR == *.jar ]]; then
+            PRODUCE_JAR=1
+
+            if [[ ! -d `dirname $OUT_DIR` ]]; then
+                mkdir -p `dirname $OUT_DIR`
+            fi
+
+            if [[ ! -z $COPY_PROTO ]]; then
+                COPY_PROTO=`dirname $OUT_DIR`
+            fi
+        else
+            PRODUCE_JAR=0
+
+            if [[ ! -d $OUT_DIR/src/main/java ]]; then
+                mkdir -p $OUT_DIR/src/main/java
+            fi
+
+            if [[ ! -z $COPY_PROTO ]]; then
+                COPY_PROTO="$OUT_DIR/src/main/protobuf"
+                if [[ ! -d $COPY_PROTO ]]; then
+                    mkdir -p $COPY_PROTO
+                fi
+            fi
+        fi
+    ;;
+    "node")
+        if [[ ! -d $OUT_DIR/lib ]]; then
+            mkdir -p $OUT_DIR/lib
+        fi
+
+        if [[ ! -z $COPY_PROTO ]]; then
+            COPY_PROTO=$OUT_DIR
+            if [[ ! -d $COPY_PROTO ]]; then
+                mkdir -p $COPY_PROTO
+            fi
+        fi
+    ;;
+    "web")
+        if [[ ! -d $OUT_DIR/lib ]]; then
+            mkdir -p $OUT_DIR/lib
+        fi
+
+        if [[ ! -z $COPY_PROTO ]]; then
+            COPY_PROTO=$OUT_DIR
+            if [[ ! -d $COPY_PROTO ]]; then
+                mkdir -p $COPY_PROTO
+            fi
+        fi
+    ;;
+    "*")
+        if [[ ! -d $OUT_DIR ]]; then
+            mkdir -p $OUT_DIR
+        fi
+
+        if [[ ! -z $COPY_PROTO ]]; then
+            COPY_PROTO=$OUT_DIR
+            if [[ ! -d $COPY_PROTO ]]; then
+                mkdir -p $COPY_PROTO
+            fi
+        fi
+    ;;
+esac
 
 GEN_STRING=''
 case $GEN_LANG in
@@ -175,16 +237,26 @@ plugins=grpc+embedded\
 :$OUT_DIR"
         ;;
     "java")
-        GEN_STRING="--grpc_out=$OUT_DIR --${GEN_LANG}_out=$OUT_DIR --plugin=protoc-gen-grpc=`which protoc-gen-grpc-java`"
+        if [[ $PRODUCE_JAR == 0 ]]; then
+            echo "No Jar: ${PRODUCE_JAR}"
+            GEN_STRING="--grpc_out=$OUT_DIR/src/main/java --${GEN_LANG}_out=$OUT_DIR/src/main/java --plugin=protoc-gen-grpc=`which protoc-gen-grpc-java`"
+        else
+            # In this case, OUT_DIR is fully qualified path to a jar file.
+            echo "Has Jar: ${PRODUCE_JAR}"
+            GEN_STRING="--grpc_out=$OUT_DIR --${GEN_LANG}_out=$OUT_DIR --plugin=protoc-gen-grpc=`which protoc-gen-grpc-java`"
+        fi
         ;;
     "node")
-        GEN_STRING="--grpc_out=$OUT_DIR --js_out=import_style=commonjs,binary:$OUT_DIR --plugin=protoc-gen-grpc=`which grpc_${PLUGIN_LANG}_plugin`"
+        if [[ ! -d $OUT_DIR/lib ]]; then
+            mkdir $OUT_DIR/lib
+        fi
+        GEN_STRING="--grpc_out=$OUT_DIR/lib --js_out=import_style=commonjs,binary:$OUT_DIR/lib --ts_out=$OUT_DIR/lib --plugin=protoc-gen-grpc=`which grpc_${PLUGIN_LANG}_plugin` --plugin=protoc-gen-ts=/usr/local/bin/grpc_ts_plugin/node_modules/.bin/protoc-gen-ts"
         ;;
     "web")
-        GEN_STRING="--grpc-web_out=import_style=typescript,mode=grpcwebtext:$OUT_DIR --js_out=import_style=commonjs:$OUT_DIR --plugin=protoc-gen-grpc-web=`which grpc_${PLUGIN_LANG}_plugin`"
-        ;;
-    "ts")
-        GEN_STRING="--grpc_out=$OUT_DIR --js_out=import_style=commonjs,binary:$OUT_DIR --ts_out=service=true:$OUT_DIR --plugin=protoc-gen-ts=/usr/local/bin/ts-protoc-gen/node_modules/.bin/protoc-gen-ts --plugin=protoc-gen-grpc=`which grpc_node_plugin`"
+        if [[ ! -d $OUT_DIR/lib ]]; then
+            mkdir $OUT_DIR/lib
+        fi
+        GEN_STRING="--grpc-web_out=import_style=typescript,mode=grpcwebtext:$OUT_DIR/lib --js_out=import_style=commonjs:$OUT_DIR/lib --plugin=protoc-gen-grpc-web=`which grpc_${PLUGIN_LANG}_plugin`"
         ;;
     *)
         GEN_STRING="--grpc_out=$OUT_DIR --${GEN_LANG}_out=$OUT_DIR --plugin=protoc-gen-grpc=`which grpc_${PLUGIN_LANG}_plugin`"
@@ -208,7 +280,7 @@ fi
 PROTO_INCLUDE="-I /usr/local/include/ \
     $EXTRA_INCLUDES"
 
-if [ ! -z $PROTO_DIR ]; then
+if [[ ! -z $PROTO_DIR ]]; then
     PROTO_INCLUDE="$PROTO_INCLUDE -I $PROTO_DIR"
     PROTO_FILES=(`find ${PROTO_DIR} -name "*.proto"`)
 else
@@ -228,7 +300,6 @@ protoc $PROTO_INCLUDE \
 if [[ $GEN_LANG == "python" ]]; then
     # Create __init__.py for everything in the OUT_DIR
     # (i.e. gen/pb_python/foo/bar/).
-    echo "Out dir is '$OUT_DIR'"
     find $OUT_DIR -type d | xargs -n1 -I '{}' touch '{}/__init__.py'
     # And everything above it (i.e. gen/__init__py")
     d=`dirname $OUT_DIR`
@@ -238,12 +309,19 @@ if [[ $GEN_LANG == "python" ]]; then
     done
 fi
 
-if [ $GEN_GATEWAY = true ]; then
+if [[ $GEN_GATEWAY = true ]]; then
     GATEWAY_DIR=${OUT_DIR}
     mkdir -p ${GATEWAY_DIR}
 
     protoc $PROTO_INCLUDE \
-		--grpc-gateway_out=logtostderr=true:$GATEWAY_DIR ${PROTO_FILES[@]}
+        --grpc-gateway_out=logtostderr=true:$GATEWAY_DIR ${PROTO_FILES[@]}
     protoc $PROTO_INCLUDE  \
-		--swagger_out=logtostderr=true:$GATEWAY_DIR ${PROTO_FILES[@]}
+        --swagger_out=logtostderr=true:$GATEWAY_DIR ${PROTO_FILES[@]}
+fi
+
+if [[ ! -z $COPY_PROTO ]]; then
+    echo "Copy protos to ${COPY_PROTO}"
+    cp ${PROTO_FILES[@]} ${COPY_PROTO}
+else
+    echo "Disabled proto copy with ${COPY_PROTO}"
 fi

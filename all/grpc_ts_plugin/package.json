@@ -1,0 +1,21 @@
+{
+  "name": "grpc_ts_plugin",
+  "version": "1.18.0",
+  "description": "Pseudo project for downloading Typescript plugin for gRPC protobuf codegen",
+  "main": "index.js",
+  "dependencies": {
+    "debug": "3.2.6",
+    "google-protobuf": "3.6.1",
+    "grpc": "1.18.0"
+  },
+  "devDependencies": {
+    "@types/debug": "0.0.31",
+    "@types/google-protobuf": "3.2.7",
+    "@types/node": "10.12.18",
+    "grpc_tools_node_protoc_ts": "2.4.2"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "license": "MIT"
+}
