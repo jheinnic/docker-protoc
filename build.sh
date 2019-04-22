@@ -9,6 +9,7 @@ for build in ${BUILDS[@]}; do
         -f Dockerfile \
         --build-arg grpc_version=${GRPC_VERSION} \
         --build-arg grpc_java=${GRPC_JAVA_VERSION} \
+        --build-arg namely_build=_${BUILD_VERSION} \
         --target ${build} \
         .
 
